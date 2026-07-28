@@ -395,6 +395,26 @@
   }
   @keyframes walk-pulse{ 50%{ opacity:0.25; transform:scale(0.7); } }
 
+  .user-dot{
+    position:relative; width:18px; height:18px;
+  }
+  .user-dot::before{
+    content:''; position:absolute; inset:0; border-radius:50%;
+    background:#4A90D9; border:3px solid #fff;
+    box-shadow:0 1px 5px rgba(0,0,0,0.5);
+    z-index:2;
+  }
+  .user-dot-pulse{
+    position:absolute; top:50%; left:50%; width:18px; height:18px;
+    margin:-9px 0 0 -9px; border-radius:50%;
+    background:rgba(74,144,217,0.45);
+    animation: user-dot-ping 1.8s ease-out infinite;
+  }
+  @keyframes user-dot-ping{
+    0%{ transform:scale(1); opacity:0.7; }
+    100%{ transform:scale(3.2); opacity:0; }
+  }
+
   #proximity-banner{
     position:absolute; left:14px; right:14px; bottom:22px; z-index:800;
     background:var(--paper); border-radius:16px;
@@ -1683,8 +1703,6 @@
     );
   }
 
-  initDefaultCity();
-
   // ---- Walking mode: live proximity detection across all cities ----
   const PROXIMITY_KM = 0.15; // ~150 meters
   const allLocationsFlat = [];
@@ -1696,6 +1714,9 @@
   let walkWatchId = null;
   let nearbyId = null;
   let dismissedId = null;
+  let userMarker = null;
+  let userAccuracyCircle = null;
+  let userLocationCentered = false;
 
   function toggleWalkMode(){
     if(walkModeOn) stopWalkMode(); else startWalkMode();
@@ -1704,6 +1725,7 @@
   function startWalkMode(){
     if(!navigator.geolocation) return;
     walkModeOn = true;
+    userLocationCentered = false;
     document.getElementById('walk-toggle').classList.add('active');
     document.getElementById('walk-toggle').innerHTML = '<span class="dot"></span> Walking mode on';
     walkWatchId = navigator.geolocation.watchPosition(onWalkPosition, () => {}, {
@@ -1718,10 +1740,37 @@
     if(walkWatchId !== null){ navigator.geolocation.clearWatch(walkWatchId); walkWatchId = null; }
     hideProximityBanner();
     nearbyId = null;
+    if(userMarker){ map.removeLayer(userMarker); userMarker = null; }
+    if(userAccuracyCircle){ map.removeLayer(userAccuracyCircle); userAccuracyCircle = null; }
+  }
+
+  function updateUserLocationMarker(lat, lng, accuracy){
+    if(!userMarker){
+      const icon = L.divIcon({
+        className: '',
+        html: '<div class="user-dot"><div class="user-dot-pulse"></div></div>',
+        iconSize: [18, 18], iconAnchor: [9, 9]
+      });
+      userMarker = L.marker([lat, lng], { icon, zIndexOffset: 1000 }).addTo(map);
+      userAccuracyCircle = L.circle([lat, lng], {
+        radius: accuracy, color: '#4A90D9', weight: 1, fillColor: '#4A90D9', fillOpacity: 0.12
+      }).addTo(map);
+    } else {
+      userMarker.setLatLng([lat, lng]);
+      userAccuracyCircle.setLatLng([lat, lng]);
+      userAccuracyCircle.setRadius(accuracy);
+    }
+
+    if(!userLocationCentered){
+      userLocationCentered = true;
+      map.setView([lat, lng], 17, { animate: true });
+    }
   }
 
   function onWalkPosition(pos){
-    const { latitude, longitude } = pos.coords;
+    const { latitude, longitude, accuracy } = pos.coords;
+    updateUserLocationMarker(latitude, longitude, accuracy || 25);
+
     let closest = null, closestDist = Infinity;
     allLocationsFlat.forEach(entry => {
       const d = haversineKm(latitude, longitude, entry.loc.lat, entry.loc.lng);
@@ -1847,6 +1896,8 @@
   }
   setTimeout(dismissSplash, 1800);
   splash.addEventListener('click', dismissSplash);
+
+  initDefaultCity();
 </script>
 
 </body>
